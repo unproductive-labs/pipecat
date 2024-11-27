@@ -21,6 +21,7 @@ class SentryMetrics(FrameProcessorMetrics):
         self._processing_metrics_span = None
 
     async def start_ttfb_metrics(self, report_only_initial_ttfb):
+        logger.debug(f"Starting TTFB metrics for {self._processor_name()} should report: {self._should_report_ttfb}")
         if self._should_report_ttfb:
             self._start_ttfb_time = time.time()
             if sentry_available:
@@ -29,27 +30,40 @@ class SentryMetrics(FrameProcessorMetrics):
                     description=f"TTFB for {self._processor_name()}",
                     start_timestamp=self._start_ttfb_time,
                 )
-                logger.debug(f"Sentry Span ID: {self._ttfb_metrics_span.span_id} Description: {
-                             self._ttfb_metrics_span.description} started.")
+                logger.debug(f"SPAN: {self._ttfb_metrics_span}")
+                logger.debug(f"Sentry Span ID: {self._ttfb_metrics_span.span_id} Description: {self._ttfb_metrics_span.description} started.")
             self._should_report_ttfb = not report_only_initial_ttfb
 
     async def stop_ttfb_metrics(self):
         stop_time = time.time()
         if sentry_available:
-            self._ttfb_metrics_span.finish(end_timestamp=stop_time)
+            logger.debug(f"Stopping TTFB metrics for {self._processor_name()}")
+            if self._ttfb_metrics_span is not None:
+
+                self._ttfb_metrics_span.finish(end_timestamp=stop_time)
+                logger.debug(f"Successfully stopped TTFB metrics for {self._processor_name()}")
+            else:
+                logger.warning("Attempted to stop TTFB metrics, but span was None")
 
     async def start_processing_metrics(self):
         self._start_processing_time = time.time()
+        logger.debug(f"Starting processing metrics for {self._processor_name()} is sentry available: {sentry_available}")
         if sentry_available:
             self._processing_metrics_span = sentry_sdk.start_span(
                 op="processing",
                 description=f"Processing for {self._processor_name()}",
                 start_timestamp=self._start_processing_time,
             )
-            logger.debug(f"Sentry Span ID: {self._processing_metrics_span.span_id} Description: {
-                         self._processing_metrics_span.description} started.")
+            logger.debug(f"SPAN: {self._processing_metrics_span}")
+            logger.debug(f"Sentry Span ID: {self._processing_metrics_span.span_id} Description: {self._processing_metrics_span.description} started.")
 
     async def stop_processing_metrics(self):
         stop_time = time.time()
+        logger.debug(f"Stopping processing metrics: Span ID: {self._processing_metrics_span}")
         if sentry_available:
-            self._processing_metrics_span.finish(end_timestamp=stop_time)
+            if self._processing_metrics_span is not None:
+                logger.debug(f"Stopping processing metrics: Span ID: {self._processing_metrics_span.span_id}")
+                self._processing_metrics_span.finish(end_timestamp=stop_time)
+                logger.debug(f"Successfully stopped processing metrics for {self._processor_name()}")
+            else:
+                logger.warning("Attempted to stop processing metrics, but span was None")
