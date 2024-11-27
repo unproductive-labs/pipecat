@@ -16,7 +16,6 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from pipecat.frames.frames import (
-    AudioRawFrame,
     ErrorFrame,
     Frame,
     LLMFullResponseEndFrame,
@@ -28,6 +27,7 @@ from pipecat.frames.frames import (
     TTSStartedFrame,
     TTSStoppedFrame,
     VisionImageRawFrame,
+    AudioRawFrame,
 )
 from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.processors.aggregators.openai_llm_context import (
@@ -56,183 +56,86 @@ except ModuleNotFoundError as e:
     raise Exception(f"Missing module: {e}")
 
 
-def language_to_google_language(language: Language) -> str | None:
-    language_map = {
-        # Afrikaans
-        Language.AF: "af-ZA",
-        Language.AF_ZA: "af-ZA",
-        # Arabic
-        Language.AR: "ar-XA",
-        # Bengali
-        Language.BN: "bn-IN",
-        Language.BN_IN: "bn-IN",
-        # Bulgarian
-        Language.BG: "bg-BG",
-        Language.BG_BG: "bg-BG",
-        # Catalan
-        Language.CA: "ca-ES",
-        Language.CA_ES: "ca-ES",
-        # Chinese (Mandarin and Cantonese)
-        Language.ZH: "cmn-CN",
-        Language.ZH_CN: "cmn-CN",
-        Language.ZH_TW: "cmn-TW",
-        Language.ZH_HK: "yue-HK",
-        # Czech
-        Language.CS: "cs-CZ",
-        Language.CS_CZ: "cs-CZ",
-        # Danish
-        Language.DA: "da-DK",
-        Language.DA_DK: "da-DK",
-        # Dutch
-        Language.NL: "nl-NL",
-        Language.NL_BE: "nl-BE",
-        Language.NL_NL: "nl-NL",
-        # English
-        Language.EN: "en-US",
-        Language.EN_US: "en-US",
-        Language.EN_AU: "en-AU",
-        Language.EN_GB: "en-GB",
-        Language.EN_IN: "en-IN",
-        # Estonian
-        Language.ET: "et-EE",
-        Language.ET_EE: "et-EE",
-        # Filipino
-        Language.FIL: "fil-PH",
-        Language.FIL_PH: "fil-PH",
-        # Finnish
-        Language.FI: "fi-FI",
-        Language.FI_FI: "fi-FI",
-        # French
-        Language.FR: "fr-FR",
-        Language.FR_CA: "fr-CA",
-        Language.FR_FR: "fr-FR",
-        # Galician
-        Language.GL: "gl-ES",
-        Language.GL_ES: "gl-ES",
-        # German
-        Language.DE: "de-DE",
-        Language.DE_DE: "de-DE",
-        # Greek
-        Language.EL: "el-GR",
-        Language.EL_GR: "el-GR",
-        # Gujarati
-        Language.GU: "gu-IN",
-        Language.GU_IN: "gu-IN",
-        # Hebrew
-        Language.HE: "he-IL",
-        Language.HE_IL: "he-IL",
-        # Hindi
-        Language.HI: "hi-IN",
-        Language.HI_IN: "hi-IN",
-        # Hungarian
-        Language.HU: "hu-HU",
-        Language.HU_HU: "hu-HU",
-        # Icelandic
-        Language.IS: "is-IS",
-        Language.IS_IS: "is-IS",
-        # Indonesian
-        Language.ID: "id-ID",
-        Language.ID_ID: "id-ID",
-        # Italian
-        Language.IT: "it-IT",
-        Language.IT_IT: "it-IT",
-        # Japanese
-        Language.JA: "ja-JP",
-        Language.JA_JP: "ja-JP",
-        # Kannada
-        Language.KN: "kn-IN",
-        Language.KN_IN: "kn-IN",
-        # Korean
-        Language.KO: "ko-KR",
-        Language.KO_KR: "ko-KR",
-        # Latvian
-        Language.LV: "lv-LV",
-        Language.LV_LV: "lv-LV",
-        # Lithuanian
-        Language.LT: "lt-LT",
-        Language.LT_LT: "lt-LT",
-        # Malay
-        Language.MS: "ms-MY",
-        Language.MS_MY: "ms-MY",
-        # Malayalam
-        Language.ML: "ml-IN",
-        Language.ML_IN: "ml-IN",
-        # Marathi
-        Language.MR: "mr-IN",
-        Language.MR_IN: "mr-IN",
-        # Norwegian
-        Language.NO: "nb-NO",
-        Language.NB: "nb-NO",
-        Language.NB_NO: "nb-NO",
-        # Polish
-        Language.PL: "pl-PL",
-        Language.PL_PL: "pl-PL",
-        # Portuguese
-        Language.PT: "pt-PT",
-        Language.PT_BR: "pt-BR",
-        Language.PT_PT: "pt-PT",
-        # Punjabi
-        Language.PA: "pa-IN",
-        Language.PA_IN: "pa-IN",
-        # Romanian
-        Language.RO: "ro-RO",
-        Language.RO_RO: "ro-RO",
-        # Russian
-        Language.RU: "ru-RU",
-        Language.RU_RU: "ru-RU",
-        # Serbian
-        Language.SR: "sr-RS",
-        Language.SR_RS: "sr-RS",
-        # Slovak
-        Language.SK: "sk-SK",
-        Language.SK_SK: "sk-SK",
-        # Spanish
-        Language.ES: "es-ES",
-        Language.ES_ES: "es-ES",
-        Language.ES_US: "es-US",
-        # Swedish
-        Language.SV: "sv-SE",
-        Language.SV_SE: "sv-SE",
-        # Tamil
-        Language.TA: "ta-IN",
-        Language.TA_IN: "ta-IN",
-        # Telugu
-        Language.TE: "te-IN",
-        Language.TE_IN: "te-IN",
-        # Thai
-        Language.TH: "th-TH",
-        Language.TH_TH: "th-TH",
-        # Turkish
-        Language.TR: "tr-TR",
-        Language.TR_TR: "tr-TR",
-        # Ukrainian
-        Language.UK: "uk-UA",
-        Language.UK_UA: "uk-UA",
-        # Vietnamese
-        Language.VI: "vi-VN",
-        Language.VI_VN: "vi-VN",
-    }
+class GoogleLLMContext(OpenAILLMContext):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._google_messages: List[glm.Content] = []
+        self._update_google_messages()
 
-    return language_map.get(language)
+    def _update_google_messages(self):
+        """Convert OpenAI format messages to Google format"""
+        self._google_messages = []
+        for message in self._messages:  # This is in OpenAI format
+            self._google_messages.append(self.from_standard_message(message))
 
+    def set_messages(self, messages: List):
+        # Keep original OpenAI format
+        self._messages[:] = messages
+        self._update_google_messages()
+
+    def add_message(self, message):
+        # If it's already in Google format, convert to OpenAI first
+        if isinstance(message, glm.Content):
+            openai_messages = self.to_standard_messages(message)
+            self._messages.extend(openai_messages)
+        else:
+            # Assume OpenAI format
+            self._messages.append(message)
+        self._update_google_messages()
+
+    def get_google_messages(self) -> List[glm.Content]:
+        """Get messages in Google format"""
+        return self._google_messages
+
+    def get_messages(self) -> List[Dict]:
+        """Get messages in OpenAI format"""
+        return self._messages
+
+    def add_image_frame_message(self, *, format: str, size: tuple[int, int], image: bytes, text: str = None):
+        buffer = io.BytesIO()
+        Image.frombytes(format, size, image).save(buffer, format="JPEG")
+        
+        # Create OpenAI format message first
+        openai_message = {
+            "role": "user",
+            "content": []
+        }
+        
+        if text:
+            openai_message["content"].append({
+                "type": "text",
+                "text": text
+            })
+            
+        openai_message["content"].append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
+            }
+        })
+        
+        self._messages.append(openai_message)
+        self._update_google_messages()
 
 class GoogleUserContextAggregator(OpenAIUserContextAggregator):
     async def _push_aggregation(self):
         if len(self._aggregation) > 0:
-            self._context.add_message(
-                glm.Content(role="user", parts=[glm.Part(text=self._aggregation)])
-            )
+            # Create OpenAI format message
+            openai_message = {
+                "role": "user",
+                "content": self._aggregation
+            }
+            
+            # Add to context in OpenAI format
+            self._context.add_message(openai_message)
 
-            # Reset the aggregation. Reset it before pushing it down, otherwise
-            # if the tasks gets cancelled we won't be able to clear things up.
+            # Reset the aggregation before pushing
             self._aggregation = ""
 
             frame = OpenAILLMContextFrame(self._context)
             await self.push_frame(frame)
 
-            # Reset our accumulator state.
             self._reset()
-
 
 class GoogleAssistantContextAggregator(OpenAIAssistantContextAggregator):
     async def _push_aggregation(self):
@@ -242,7 +145,6 @@ class GoogleAssistantContextAggregator(OpenAIAssistantContextAggregator):
             return
 
         run_llm = False
-
         aggregation = self._aggregation
         self._reset()
 
@@ -251,40 +153,40 @@ class GoogleAssistantContextAggregator(OpenAIAssistantContextAggregator):
                 frame = self._function_call_result
                 self._function_call_result = None
                 if frame.result:
-                    logger.debug(f"FunctionCallResultFrame result: {frame.arguments}")
-                    self._context.add_message(
-                        glm.Content(
-                            role="model",
-                            parts=[
-                                glm.Part(
-                                    function_call=glm.FunctionCall(
-                                        name=frame.function_name, args=frame.arguments
-                                    )
-                                )
-                            ],
-                        )
-                    )
+                    # Create OpenAI format function call
+                    openai_function_call = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": frame.function_name,
+                            "type": "function",
+                            "function": {
+                                "name": frame.function_name,
+                                "arguments": json.dumps(frame.arguments)
+                            }
+                        }]
+                    }
+                    self._context.add_message(openai_function_call)
+                    
+                    # Create OpenAI format function response
                     response = frame.result
                     if isinstance(response, str):
                         response = {"response": response}
-                    self._context.add_message(
-                        glm.Content(
-                            role="user",
-                            parts=[
-                                glm.Part(
-                                    function_response=glm.FunctionResponse(
-                                        name=frame.function_name, response=response
-                                    )
-                                )
-                            ],
-                        )
-                    )
+                    
+                    openai_function_response = {
+                        "role": "tool",
+                        "content": json.dumps(response),
+                        "tool_call_id": frame.function_name
+                    }
+                    self._context.add_message(openai_function_response)
                     run_llm = not bool(self._function_calls_in_progress)
             else:
-                if aggregation.strip():
-                    self._context.add_message(
-                        glm.Content(role="model", parts=[glm.Part(text=aggregation)])
-                    )
+                # Add regular message in OpenAI format
+                openai_message = {
+                    "role": "assistant",
+                    "content": aggregation
+                }
+                self._context.add_message(openai_message)
 
             if self._pending_image_frame_message:
                 frame = self._pending_image_frame_message
@@ -524,11 +426,8 @@ class GoogleLLMContext(OpenAILLMContext):
 
 
 class GoogleLLMService(LLMService):
-    """This class implements inference with Google's AI models
-
-    This service translates internally from OpenAILLMContext to the messages format
-    expected by the Google AI model. We are using the OpenAILLMContext as a lingua
-    franca for all LLM services, so that it is easy to switch between different LLMs.
+    """This class implements inference with Google's AI models.
+    It maintains OpenAI format internally and converts to Google format only when making API calls.
     """
 
     class InputParams(BaseModel):
@@ -544,14 +443,11 @@ class GoogleLLMService(LLMService):
         api_key: str,
         model: str = "gemini-1.5-flash-latest",
         params: InputParams = InputParams(),
-        system_instruction: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         gai.configure(api_key=api_key)
-        self.set_model_name(model)
-        self._system_instruction = system_instruction
-        self._create_client()
+        self._create_client(model)
         self._settings = {
             "max_tokens": params.max_tokens,
             "temperature": params.temperature,
@@ -563,10 +459,102 @@ class GoogleLLMService(LLMService):
     def can_generate_metrics(self) -> bool:
         return True
 
-    def _create_client(self):
-        self._client = gai.GenerativeModel(
-            self._model_name, system_instruction=self._system_instruction
-        )
+    def _create_client(self, model: str):
+        self.set_model_name(model)
+        self._client = gai.GenerativeModel(model)
+
+    def _convert_to_google_message(self, message: Dict) -> glm.Content:
+        """Convert a single OpenAI format message to Google format"""
+        role = message["role"]
+        content = message.get("content", [])
+        
+        if role == "system":
+            role = "user"
+        elif role == "assistant":
+            role = "model"
+        elif role == "tool":
+            role = "user"
+            
+        parts = []
+        
+        # Handle tool calls
+        if message.get("tool_calls"):
+            for tc in message["tool_calls"]:
+                parts.append(
+                    glm.Part(
+                        function_call=glm.FunctionCall(
+                            name=tc["function"]["name"],
+                            args=json.loads(tc["function"]["arguments"]),
+                        )
+                    )
+                )
+        # Handle tool responses
+        elif role == "tool":
+            parts.append(
+                glm.Part(
+                    function_response=glm.FunctionResponse(
+                        name=message.get("tool_call_id", "tool_call"),
+                        response=json.loads(message["content"]),
+                    )
+                )
+            )
+        # Handle regular content
+        elif isinstance(content, str):
+            parts.append(glm.Part(text=content))
+        elif isinstance(content, list):
+            for c in content:
+                if c["type"] == "text":
+                    parts.append(glm.Part(text=c["text"]))
+                elif c["type"] == "image_url":
+                    # Handle base64 encoded images
+                    if "base64" in c["image_url"]["url"]:
+                        image_data = base64.b64decode(c["image_url"]["url"].split(",")[1])
+                        parts.append(
+                            glm.Part(
+                                inline_data=glm.Blob(
+                                    mime_type="image/jpeg",
+                                    data=image_data,
+                                )
+                            )
+                        )
+
+        return glm.Content(role=role, parts=parts)
+
+    def _convert_to_openai_message(self, google_message: glm.Content) -> Dict:
+        """Convert a single Google format message to OpenAI format"""
+        msg = {"role": "assistant" if google_message.role == "model" else "user"}
+        content_parts = []
+
+        for part in google_message.parts:
+            if part.text:
+                content_parts.append({"type": "text", "text": part.text})
+            elif part.inline_data:
+                encoded = base64.b64encode(part.inline_data.data).decode("utf-8")
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{part.inline_data.mime_type};base64,{encoded}"
+                    }
+                })
+            elif part.function_call:
+                msg["tool_calls"] = [{
+                    "id": part.function_call.name,
+                    "type": "function",
+                    "function": {
+                        "name": part.function_call.name,
+                        "arguments": json.dumps(part.function_call.args)
+                    }
+                }]
+            elif part.function_response:
+                msg["role"] = "tool"
+                msg["tool_call_id"] = part.function_response.name
+                msg["content"] = json.dumps(part.function_response.response)
+                return msg
+
+        if content_parts:
+            msg["content"] = content_parts if len(content_parts) > 1 else content_parts[0]["text"]
+        
+        return msg
 
     async def _process_context(self, context: OpenAILLMContext):
         await self.push_frame(LLMFullResponseStartFrame())
@@ -599,13 +587,21 @@ class GoogleLLMService(LLMService):
             }
 
             generation_config = GenerationConfig(**generation_params) if generation_params else None
-
             await self.start_ttfb_metrics()
+
             tools = context.tools if context.tools else []
 
             response = await self._client.generate_content_async(
                 contents=messages, tools=tools, stream=True, generation_config=generation_config
             )
+
+            tokens = LLMTokenUsage(
+                prompt_tokens=response.usage_metadata.prompt_token_count,
+                completion_tokens=response.usage_metadata.candidates_token_count,
+                total_tokens=response.usage_metadata.total_token_count,
+            )
+
+            await self.start_llm_usage_metrics(tokens)
             await self.stop_ttfb_metrics()
 
             if response.usage_metadata:
@@ -626,15 +622,14 @@ class GoogleLLMService(LLMService):
                             args = type(c.function_call).to_dict(c.function_call).get("args", {})
                             await self.call_function(
                                 context=context,
-                                tool_call_id="what_should_this_be",
+                                tool_call_id=c.function_call.name,  # Using name as ID
                                 function_name=c.function_call.name,
                                 arguments=args,
                             )
                 except Exception as e:
-                    # Google LLMs seem to flag safety issues a lot!
                     if chunk.candidates[0].finish_reason == 3:
                         logger.debug(
-                            f"LLM refused to generate content for safety reasons - {messages}."
+                            f"LLM refused to generate content for safety reasons - {context.get_messages()}"
                         )
                     else:
                         logger.exception(f"{self} error: {e}")
@@ -642,13 +637,6 @@ class GoogleLLMService(LLMService):
         except Exception as e:
             logger.exception(f"{self} exception: {e}")
         finally:
-            await self.start_llm_usage_metrics(
-                LLMTokenUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    total_tokens=total_tokens,
-                )
-            )
             await self.push_frame(LLMFullResponseEndFrame())
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -659,7 +647,7 @@ class GoogleLLMService(LLMService):
         if isinstance(frame, OpenAILLMContextFrame):
             context = GoogleLLMContext.upgrade_to_google(frame.context)
         elif isinstance(frame, LLMMessagesFrame):
-            context = GoogleLLMContext(frame.messages)
+            context = OpenAILLMContext(frame.messages)
         elif isinstance(frame, VisionImageRawFrame):
             context = GoogleLLMContext()
             context.add_image_frame_message(
@@ -682,7 +670,6 @@ class GoogleLLMService(LLMService):
             user, expect_stripped_words=assistant_expect_stripped_words
         )
         return GoogleContextAggregatorPair(_user=user, _assistant=assistant)
-
 
 class GoogleTTSService(TTSService):
     class InputParams(BaseModel):
@@ -714,7 +701,7 @@ class GoogleTTSService(TTSService):
             "emphasis": params.emphasis,
             "language": self.language_to_service_language(params.language)
             if params.language
-            else "en-US",
+            else Language.EN,
             "gender": params.gender,
             "google_style": params.google_style,
         }
@@ -745,7 +732,88 @@ class GoogleTTSService(TTSService):
         return True
 
     def language_to_service_language(self, language: Language) -> str | None:
-        return language_to_google_language(language)
+        match language:
+            case Language.BG:
+                return "bg-BG"
+            case Language.CA:
+                return "ca-ES"
+            case Language.ZH:
+                return "cmn-CN"
+            case Language.ZH_TW:
+                return "cmn-TW"
+            case Language.CS:
+                return "cs-CZ"
+            case Language.DA:
+                return "da-DK"
+            case Language.NL:
+                return "nl-NL"
+            case Language.EN | Language.EN_US:
+                return "en-US"
+            case Language.EN_AU:
+                return "en-AU"
+            case Language.EN_GB:
+                return "en-GB"
+            case Language.EN_IN:
+                return "en-IN"
+            case Language.ET:
+                return "et-EE"
+            case Language.FI:
+                return "fi-FI"
+            case Language.NL_BE:
+                return "nl-BE"
+            case Language.FR:
+                return "fr-FR"
+            case Language.FR_CA:
+                return "fr-CA"
+            case Language.DE:
+                return "de-DE"
+            case Language.EL:
+                return "el-GR"
+            case Language.HI:
+                return "hi-IN"
+            case Language.HU:
+                return "hu-HU"
+            case Language.ID:
+                return "id-ID"
+            case Language.IT:
+                return "it-IT"
+            case Language.JA:
+                return "ja-JP"
+            case Language.KO:
+                return "ko-KR"
+            case Language.LV:
+                return "lv-LV"
+            case Language.LT:
+                return "lt-LT"
+            case Language.MS:
+                return "ms-MY"
+            case Language.NO:
+                return "nb-NO"
+            case Language.PL:
+                return "pl-PL"
+            case Language.PT:
+                return "pt-PT"
+            case Language.PT_BR:
+                return "pt-BR"
+            case Language.RO:
+                return "ro-RO"
+            case Language.RU:
+                return "ru-RU"
+            case Language.SK:
+                return "sk-SK"
+            case Language.ES:
+                return "es-ES"
+            case Language.SV:
+                return "sv-SE"
+            case Language.TH:
+                return "th-TH"
+            case Language.TR:
+                return "tr-TR"
+            case Language.UK:
+                return "uk-UA"
+            case Language.VI:
+                return "vi-VN"
+        return None
 
     def _construct_ssml(self, text: str) -> str:
         ssml = "<speak>"
