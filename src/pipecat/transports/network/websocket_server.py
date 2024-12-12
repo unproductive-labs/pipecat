@@ -290,9 +290,12 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
 
         self._params = params
 
-        self._websocket: WebSocketResponse | None = None
+        self._websocket: websockets.WebSocketServerProtocol | None = None
 
         self._websocket_audio_buffer = bytes()
+
+        self._send_interval = (self._audio_chunk_size / self._params.audio_out_sample_rate) / 2
+        self._next_send_time = 0
 
     async def set_client_connection(self, websocket: WebSocketResponse | None):
         if self._websocket:
@@ -342,7 +345,8 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
 
     async def _write_frame(self, frame: Frame):
         payload = self._params.serializer.serialize(frame)
-        if payload and self._websocket:
+        if payload:
+            logger.info(f" ======> Sending frame to client")
             await self._websocket.send(payload)
 
     async def _write_audio_sleep(self):
@@ -354,6 +358,15 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
             self._next_send_time = time.monotonic() + self._send_interval
         else:
             self._next_send_time += self._send_interval
+
+    async def send_message(self, message):
+        logger.info(f" ======> Sending message to client")
+        try:
+            proto = self._params.serializer.serialize(message)
+            if proto:
+                await self._websocket.send_bytes(proto)
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}") 
 
 
 class WebsocketServerTransport(BaseTransport):

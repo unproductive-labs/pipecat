@@ -27,7 +27,6 @@ from pipecat.frames.frames import (
     TTSStartedFrame,
     TTSStoppedFrame,
     VisionImageRawFrame,
-    AudioRawFrame
 )
 from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.processors.aggregators.openai_llm_context import (
@@ -221,210 +220,6 @@ class GoogleContextAggregatorPair:
         return self._assistant
 
 
-class GoogleLLMContext(OpenAILLMContext):
-    def __init__(
-        self,
-        messages: list[dict] | None = None,
-        tools: list[dict] | None = None,
-        tool_choice: dict | None = None,
-    ):
-        super().__init__(messages=messages, tools=tools, tool_choice=tool_choice)
-        self.system_message = None
-
-    @staticmethod
-    def upgrade_to_google(obj: OpenAILLMContext) -> "GoogleLLMContext":
-        if isinstance(obj, OpenAILLMContext) and not isinstance(obj, GoogleLLMContext):
-            logger.debug(f"Upgrading to Google: {obj}")
-            obj.__class__ = GoogleLLMContext
-            obj._restructure_from_openai_messages()
-        return obj
-
-    def set_messages(self, messages: List):
-        self._messages[:] = messages
-        self._restructure_from_openai_messages()
-
-    def add_messages(self, messages: List):
-        # Convert each message individually
-        converted_messages = []
-        for msg in messages:
-            if isinstance(msg, glm.Content):
-                # Already in Gemini format
-                converted_messages.append(msg)
-            else:
-                # Convert from standard format to Gemini format
-                converted = self.from_standard_message(msg)
-                if converted is not None:
-                    converted_messages.append(converted)
-
-        # Add the converted messages to our existing messages
-        self._messages.extend(converted_messages)
-
-    def get_messages_for_logging(self):
-        msgs = []
-        for message in self.messages:
-            obj = glm.Content.to_dict(message)
-            try:
-                if "parts" in obj:
-                    for part in obj["parts"]:
-                        if "inline_data" in part:
-                            part["inline_data"]["data"] = "..."
-            except Exception as e:
-                logger.debug(f"Error: {e}")
-            msgs.append(obj)
-        return msgs
-
-    def add_image_frame_message(
-        self, *, format: str, size: tuple[int, int], image: bytes, text: str = None
-    ):
-        buffer = io.BytesIO()
-        Image.frombytes(format, size, image).save(buffer, format="JPEG")
-
-        parts = []
-        if text:
-            parts.append(glm.Part(text=text))
-        parts.append(glm.Part(inline_data=glm.Blob(mime_type="image/jpeg", data=buffer.getvalue())))
-
-        self.add_message(glm.Content(role="user", parts=parts))
-
-    def add_audio_frames_message(self, *, audio_frames: list[AudioRawFrame], text: str = None):
-        if not audio_frames:
-            return
-
-        sample_rate = audio_frames[0].sample_rate
-        num_channels = audio_frames[0].num_channels
-
-        parts = []
-        data = b"".join(frame.audio for frame in audio_frames)
-        if text:
-            parts.append(glm.Part(text=text))
-        parts.append(
-            glm.Part(
-                inline_data=glm.Blob(
-                    mime_type="audio/wav",
-                    data=(
-                        bytes(
-                            self.create_wav_header(sample_rate, num_channels, 16, len(data)) + data
-                        )
-                    ),
-                )
-            ),
-        )
-        self.add_message(glm.Content(role="user", parts=parts))
-        # message = {"mime_type": "audio/mp3", "data": bytes(data + create_wav_header(sample_rate, num_channels, 16, len(data)))}
-        # self.add_message(message)
-
-    def from_standard_message(self, message):
-        role = message["role"]
-        content = message.get("content", [])
-        if role == "system":
-            self.system_message = content
-            return None
-        elif role == "assistant":
-            role = "model"
-
-        parts = []
-        if message.get("tool_calls"):
-            for tc in message["tool_calls"]:
-                parts.append(
-                    glm.Part(
-                        function_call=glm.FunctionCall(
-                            name=tc["function"]["name"],
-                            args=json.loads(tc["function"]["arguments"]),
-                        )
-                    )
-                )
-        elif role == "tool":
-            role = "model"
-            parts.append(
-                glm.Part(
-                    function_response=glm.FunctionResponse(
-                        name="tool_call_result",  # seems to work to hard-code the same name every time
-                        response=json.loads(message["content"]),
-                    )
-                )
-            )
-        elif isinstance(content, str):
-            parts.append(glm.Part(text=content))
-        elif isinstance(content, list):
-            for c in content:
-                if c["type"] == "text":
-                    parts.append(glm.Part(text=c["text"]))
-                elif c["type"] == "image_url":
-                    parts.append(
-                        glm.Part(
-                            inline_data=glm.Blob(
-                                mime_type="image/jpeg",
-                                data=base64.b64decode(c["image_url"]["url"].split(",")[1]),
-                            )
-                        )
-                    )
-
-        message = glm.Content(role=role, parts=parts)
-        return message
-
-    def to_standard_messages(self, obj) -> list:
-        msg = {"role": obj.role, "content": []}
-        if msg["role"] == "model":
-            msg["role"] = "assistant"
-
-        for part in obj.parts:
-            if part.text:
-                msg["content"].append({"type": "text", "text": part.text})
-            elif part.inline_data:
-                encoded = base64.b64encode(part.inline_data.data).decode("utf-8")
-                msg["content"].append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{part.inline_data.mime_type};base64,{encoded}"},
-                    }
-                )
-            elif part.function_call:
-                args = type(part.function_call).to_dict(part.function_call).get("args", {})
-                msg["tool_calls"] = [
-                    {
-                        "id": part.function_call.name,
-                        "type": "function",
-                        "function": {
-                            "name": part.function_call.name,
-                            "arguments": json.dumps(args),
-                        },
-                    }
-                ]
-
-            elif part.function_response:
-                msg["role"] = "tool"
-                resp = (
-                    type(part.function_response).to_dict(part.function_response).get("response", {})
-                )
-                msg["tool_call_id"] = part.function_response.name
-                msg["content"] = json.dumps(resp)
-
-        # there might be no content parts for tool_calls messages
-        if not msg["content"]:
-            del msg["content"]
-        return [msg]
-
-    def _restructure_from_openai_messages(self):
-        self.system_message = None
-        # first, map across self._messages calling self.from_standard_message(m) to modify messages in place
-        try:
-            self._messages[:] = [
-                msg
-                for msg in (self.from_standard_message(m) for m in self._messages)
-                if msg is not None
-            ]
-            # We might have been given a messages list with only a system message. If so, let's put that back in
-            # the messages list as a user message.
-            if self.system_message and not self._messages:
-                self.add_message(
-                    glm.Content(role="user", parts=[glm.Part(text=self.system_message)])
-                )
-        except Exception as e:
-            logger.error(f"Error mapping messages: {e}")
-        # iterate over messages and remove any messages that have an empty content list
-        self._messages = [m for m in self._messages if m.parts]
-
-
 class GoogleLLMService(LLMService):
     """This class implements inference with Google's AI models.
     It maintains OpenAI format internally and converts to Google format only when making API calls.
@@ -556,23 +351,21 @@ class GoogleLLMService(LLMService):
         
         return msg
 
+    async def _async_generator_wrapper(self, sync_generator):
+        for item in sync_generator:
+            yield item
+            await asyncio.sleep(0)
+
     async def _process_context(self, context: OpenAILLMContext):
         await self.push_frame(LLMFullResponseStartFrame())
-
-        prompt_tokens = 0
-        completion_tokens = 0
-        total_tokens = 0
-
         try:
-            logger.debug(
-                f"Generating chat: {self._system_instruction} | {context.get_messages_for_logging()}"
-            )
+            logger.debug(f"Generating chat: {context.get_messages_for_logging()}")
 
-            messages = context.messages
-            if context.system_message and self._system_instruction != context.system_message:
-                logger.debug(f"System instruction changed: {context.system_message}")
-                self._system_instruction = context.system_message
-                self._create_client()
+            # Convert OpenAI format messages to Google format
+            google_messages = [
+                self._convert_to_google_message(msg) 
+                for msg in context.get_messages()
+            ]
 
             # Filter out None values and create GenerationConfig
             generation_params = {
@@ -590,9 +383,11 @@ class GoogleLLMService(LLMService):
             await self.start_ttfb_metrics()
 
             tools = context.tools if context.tools else []
-
-            response = await self._client.generate_content_async(
-                contents=messages, tools=tools, stream=True, generation_config=generation_config
+            response = self._client.generate_content(
+                contents=google_messages,
+                tools=tools,
+                stream=True,
+                generation_config=generation_config
             )
 
             tokens = LLMTokenUsage(
@@ -604,16 +399,7 @@ class GoogleLLMService(LLMService):
             await self.start_llm_usage_metrics(tokens)
             await self.stop_ttfb_metrics()
 
-            if response.usage_metadata:
-                prompt_tokens = response.usage_metadata.prompt_token_count
-                completion_tokens = response.usage_metadata.candidates_token_count
-                total_tokens = response.usage_metadata.total_token_count
-
-            async for chunk in response:
-                if chunk.usage_metadata:
-                    prompt_tokens += response.usage_metadata.prompt_token_count
-                    completion_tokens += response.usage_metadata.candidates_token_count
-                    total_tokens += response.usage_metadata.total_token_count
+            async for chunk in self._async_generator_wrapper(response):
                 try:
                     for c in chunk.parts:
                         if c.text:
@@ -645,14 +431,11 @@ class GoogleLLMService(LLMService):
         context = None
 
         if isinstance(frame, OpenAILLMContextFrame):
-            context = GoogleLLMContext.upgrade_to_google(frame.context)
+            context = frame.context  # No need to upgrade anymore
         elif isinstance(frame, LLMMessagesFrame):
             context = OpenAILLMContext(frame.messages)
         elif isinstance(frame, VisionImageRawFrame):
-            context = GoogleLLMContext()
-            context.add_image_frame_message(
-                format=frame.format, size=frame.size, image=frame.image, text=frame.text
-            )
+            context = OpenAILLMContext.from_image_frame(frame)
         elif isinstance(frame, LLMUpdateSettingsFrame):
             await self._update_settings(frame.settings)
         else:

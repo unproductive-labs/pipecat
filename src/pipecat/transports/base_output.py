@@ -9,7 +9,7 @@ import itertools
 import sys
 import time
 from typing import AsyncGenerator, List
-import json
+
 from loguru import logger
 from PIL import Image
 
@@ -37,7 +37,7 @@ from pipecat.frames.frames import (
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.transports.base_transport import TransportParams
 from pipecat.utils.time import nanoseconds_to_seconds
-
+import json
 
 class BaseOutputTransport(FrameProcessor):
     def __init__(self, params: TransportParams, **kwargs):
@@ -126,10 +126,6 @@ class BaseOutputTransport(FrameProcessor):
         elif isinstance(frame, (StartInterruptionFrame, StopInterruptionFrame)):
             await self.push_frame(frame, direction)
             await self._handle_interruptions(frame)
-            # Push a transport message for our client
-            logger.info("=======================WE ARE INTERRUPTING===============================>")
-            interrupt_transport = TransportMessageFrame(json.dumps({"type": "interrupt"}))
-            await self.send_message(interrupt_transport)
         elif isinstance(frame, TransportMessageUrgentFrame):
             await self.send_message(frame)
         elif isinstance(frame, SystemFrame):
@@ -174,6 +170,9 @@ class BaseOutputTransport(FrameProcessor):
             return
 
         if isinstance(frame, StartInterruptionFrame):
+
+            transport_frame = TransportMessageFrame(json.dumps({"type": "interrupt"}))
+            await self.send_message(transport_frame)
             # Cancel sink and output tasks.
             await self._cancel_sink_tasks()
             await self._cancel_output_tasks()
@@ -213,12 +212,14 @@ class BaseOutputTransport(FrameProcessor):
     async def _bot_started_speaking(self):
         if not self._bot_speaking:
             logger.debug("Bot started speaking")
+            await self.push_frame(BotStartedSpeakingFrame())
             await self.push_frame(BotStartedSpeakingFrame(), FrameDirection.UPSTREAM)
             self._bot_speaking = True
 
     async def _bot_stopped_speaking(self):
         if self._bot_speaking:
             logger.debug("Bot stopped speaking")
+            await self.push_frame(BotStoppedSpeakingFrame())
             await self.push_frame(BotStoppedSpeakingFrame(), FrameDirection.UPSTREAM)
             self._bot_speaking = False
 
@@ -461,6 +462,7 @@ class BaseOutputTransport(FrameProcessor):
                 # it's actually speaking.
                 if isinstance(frame, TTSAudioRawFrame):
                     await self._bot_started_speaking()
+                    await self.push_frame(BotSpeakingFrame())
                     await self.push_frame(BotSpeakingFrame(), FrameDirection.UPSTREAM)
 
                 # Also, push frame downstream in case anyone else needs it.
