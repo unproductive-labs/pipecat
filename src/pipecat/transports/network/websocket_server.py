@@ -25,7 +25,7 @@ from pipecat.frames.frames import (
     TransportMessageFrame,
     Frame,
     StartInterruptionFrame,
-    AudioRawFrame
+    AudioRawFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.serializers.base_serializer import FrameSerializer
@@ -342,6 +342,7 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
             self._websocket_audio_buffer = self._websocket_audio_buffer[
                 self._params.audio_frame_size :
             ]            
+        await self._write_audio_sleep()
 
     async def _write_frame(self, frame: Frame):
         payload = self._params.serializer.serialize(frame)
