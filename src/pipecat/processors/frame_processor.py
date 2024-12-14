@@ -181,9 +181,11 @@ class FrameProcessor:
             await self.__input_queue.put((frame, direction, callback))
 
     async def pause_processing_frames(self):
+        logger.debug("Pausing processing frames")
         self.__should_block_frames = True
 
     async def resume_processing_frames(self):
+        logger.debug("Resuming processing frames")
         self.__input_event.set()
         self.__should_block_frames = False
 

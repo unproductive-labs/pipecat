@@ -170,10 +170,14 @@ class BaseOutputTransport(FrameProcessor):
             return
 
         if isinstance(frame, StartInterruptionFrame):
-            # Cancel sink and output tasks.
+            logger.info("=======> StartInterruptionFrame received")
+            logger.debug(f"Current state - bot_speaking: {self._bot_speaking}, running_out_tasks: {self._running_out_tasks}")
+            # Cancel sink and output tasks
             await self._cancel_sink_tasks()
-            await self._cancel_output_tasks()
-            # Create sink and output tasks.
+            await self._cancel_output_tasks()            
+
+            # Create sink and output tasks
+            logger.debug("Creating new tasks after interruption")
             self._create_output_tasks()
             self._create_sink_tasks()
             # Let's send a bot stopped speaking if we have to.
@@ -208,13 +212,11 @@ class BaseOutputTransport(FrameProcessor):
 
     async def _bot_started_speaking(self):
         if not self._bot_speaking:
-            logger.debug("Bot started speaking")
             await self.push_frame(BotStartedSpeakingFrame(), FrameDirection.UPSTREAM)
             self._bot_speaking = True
 
     async def _bot_stopped_speaking(self):
         if self._bot_speaking:
-            logger.debug("Bot stopped speaking")
             await self.push_frame(BotStoppedSpeakingFrame(), FrameDirection.UPSTREAM)
             self._bot_speaking = False
 
@@ -317,13 +319,17 @@ class BaseOutputTransport(FrameProcessor):
             await self._audio_out_task
 
     async def _cancel_output_tasks(self):
+        logger.debug("Starting to cancel output tasks...")
         # Stop camera output task.
         if self._camera_out_task and self._params.camera_out_enabled:
+            logger.debug("Cancelling camera output task")
             self._camera_out_task.cancel()
             await self._camera_out_task
             self._camera_out_task = None
+            logger.debug("Camera output task cancelled")
         # Stop audio output task.
         if self._audio_out_task and self._params.audio_out_enabled:
+            logger.debug("Cancelling audio output task")
             self._audio_out_task.cancel()
             await self._audio_out_task
             self._audio_out_task = None

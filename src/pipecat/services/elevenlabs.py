@@ -281,7 +281,7 @@ class ElevenLabsTTSService(WordTTSService):
             await self.pause_processing_frames()
         elif isinstance(frame, LLMFullResponseEndFrame) and self._started:
             await self.pause_processing_frames()
-        elif isinstance(frame, BotStoppedSpeakingFrame):
+        elif isinstance(frame, (StartInterruptionFrame, BotStoppedSpeakingFrame)):
             await self.resume_processing_frames()
 
     async def _connect(self):
@@ -356,8 +356,14 @@ class ElevenLabsTTSService(WordTTSService):
         while True:
             try:
                 async for message in self._websocket:
+                    # Check if we're interrupted before processing any message
+                    if not self._started:
+                        logger.info("ElevenLabs: Skipping websocket message because TTS is stopped")
+                        continue
+                    
                     msg = json.loads(message)
                     if msg.get("audio"):
+                        logger.debug("ElevenLabs: Received audio data from websocket")
                         await self.stop_ttfb_metrics()
                         self.start_word_timestamps()
 
@@ -365,10 +371,12 @@ class ElevenLabsTTSService(WordTTSService):
                         frame = TTSAudioRawFrame(audio, self._settings["sample_rate"], 1)
                         await self.push_frame(frame)
                     if msg.get("alignment"):
+                        logger.debug("ElevenLabs: Received alignment data from websocket")
                         word_times = calculate_word_times(msg["alignment"], self._cumulative_time)
                         await self.add_word_timestamps(word_times)
                         self._cumulative_time = word_times[-1][1]
             except asyncio.CancelledError:
+                logger.debug("ElevenLabs: _receive_task_handler cancelled")
                 break
             except Exception as e:
                 logger.error(f"{self} exception: {e}")
@@ -406,6 +414,7 @@ class ElevenLabsTTSService(WordTTSService):
                 logger.info(f"===> elevenlabs Sending text: {text}")
                 await self._send_text(text)
                 await self.start_tts_usage_metrics(text)
+                
             except Exception as e:
                 logger.error(f"{self} error sending message: {e}")
                 yield TTSStoppedFrame()
