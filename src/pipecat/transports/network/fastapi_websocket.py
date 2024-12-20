@@ -20,13 +20,14 @@ from pipecat.frames.frames import (
     OutputAudioRawFrame,
     StartFrame,
     StartInterruptionFrame,
+    TransportMessageFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.serializers.base_serializer import FrameSerializer, FrameSerializerType
 from pipecat.transports.base_input import BaseInputTransport
 from pipecat.transports.base_output import BaseOutputTransport
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-
+import json
 from loguru import logger
 
 try:
@@ -59,30 +60,27 @@ class FastAPIWebsocketInputTransport(BaseInputTransport):
         **kwargs,
     ):
         super().__init__(params, **kwargs)
-
         self._websocket = websocket
         self._params = params
         self._callbacks = callbacks
+        self.last_log_time = time.time()
 
     async def start(self, frame: StartFrame):
         await super().start(frame)
         await self._callbacks.on_client_connected(self._websocket)
         self._receive_task = self.get_event_loop().create_task(self._receive_messages())
 
-    def _iter_data(self) -> typing.AsyncIterator[bytes | str]:
-        if self._params.serializer.type == FrameSerializerType.BINARY:
-            return self._websocket.iter_bytes()
-        else:
-            return self._websocket.iter_text()
-
     async def _receive_messages(self):
-        async for message in self._iter_data():
+        async for message in self._websocket:
             frame = self._params.serializer.deserialize(message)
-
             if not frame:
                 continue
 
             if isinstance(frame, InputAudioRawFrame):
+                time_since_last_log = time.time() - self.last_log_time
+                if time_since_last_log > 10:
+                    logger.info("Recieving audio frames")
+                    self.last_log_time = time.time()
                 await self.push_audio_frame(frame)
             else:
                 await self.push_frame(frame)
@@ -105,6 +103,9 @@ class FastAPIWebsocketOutputTransport(BaseOutputTransport):
 
         if isinstance(frame, StartInterruptionFrame):
             await self._write_frame(frame)
+            #Here we send our trasport message to the client
+            interrupt_transport = TransportMessageFrame(json.dumps({"type": "interrupt"}))
+            await self.send_message(interrupt_transport)
             self._next_send_time = 0
 
     async def write_raw_audio_frames(self, frames: bytes):
@@ -160,6 +161,9 @@ class FastAPIWebsocketOutputTransport(BaseOutputTransport):
             self._next_send_time = time.monotonic() + self._send_interval
         else:
             self._next_send_time += self._send_interval
+
+    async def send_message(self, frame: TransportMessageFrame):
+        await self._write_frame(frame)
 
 
 class FastAPIWebsocketTransport(BaseTransport):
