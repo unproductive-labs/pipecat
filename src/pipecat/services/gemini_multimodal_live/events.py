@@ -106,6 +106,7 @@ class InlineData(BaseModel):
 
 class Part(BaseModel):
     inlineData: Optional[InlineData] = None
+    text: Optional[str] = None
 
 
 class ModelTurn(BaseModel):
