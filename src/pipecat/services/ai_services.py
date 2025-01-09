@@ -335,6 +335,7 @@ class TTSService(AIService):
         else:
             self._current_sentence += frame.text
             eos_end_marker = match_endofsentence(self._current_sentence)
+            logger.debug(f"EOS end marker: {eos_end_marker} for text {frame.text}")
             if eos_end_marker:
                 text = self._current_sentence[:eos_end_marker]
                 self._current_sentence = self._current_sentence[eos_end_marker:]

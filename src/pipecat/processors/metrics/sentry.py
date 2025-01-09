@@ -43,7 +43,7 @@ class SentryMetrics(FrameProcessorMetrics):
 
     async def stop_ttfb_metrics(self):
         stop_time = time.time()
-        if sentry_available:
+        if sentry_available and self._ttfb_metrics_span:
             self._ttfb_metrics_span.finish(end_timestamp=stop_time)
 
     async def start_processing_metrics(self):
@@ -60,5 +60,5 @@ class SentryMetrics(FrameProcessorMetrics):
 
     async def stop_processing_metrics(self):
         stop_time = time.time()
-        if sentry_available:
+        if sentry_available and self._processing_metrics_span:
             self._processing_metrics_span.finish(end_timestamp=stop_time)
